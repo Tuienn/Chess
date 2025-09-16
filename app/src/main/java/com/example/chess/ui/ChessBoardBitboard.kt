@@ -1,6 +1,7 @@
 
 package com.example.chess.ui
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,6 +36,32 @@ fun ChessBoardBitboard(
     var turn by remember { mutableStateOf(Side.WHITE) }
     var selected by remember { mutableStateOf<Int?>(null) }
     var movesMask by remember { mutableStateOf(0UL) }
+    
+    // Animation state cho quân cờ đang di chuyển
+    var animatingPiece by remember { mutableStateOf<Triple<String, Int, Int>?>(null) } // (pieceCode, fromIdx, toIdx)
+    var pendingMove by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (fromIdx, toIdx) - move chờ thực hiện
+    
+    val animationProgress = animateFloatAsState(
+        targetValue = if (animatingPiece != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        finishedListener = { 
+            if (animatingPiece != null) {
+                animatingPiece = null
+            }
+        }
+    )
+    
+    // Handle pending move after animation
+    LaunchedEffect(pendingMove) {
+        pendingMove?.let { (fromIdx, toIdx) ->
+            kotlinx.coroutines.delay(300) // Đợi animation hoàn thành
+            // Thực hiện đi quân
+            board = applyMove(board, fromIdx, toIdx)
+            // Đổi lượt
+            turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
+            pendingMove = null
+        }
+    }
 
     Column(
         modifier = modifier
@@ -77,7 +104,12 @@ fun ChessBoardBitboard(
             MovesOverlay(movesMask = movesMask, square = sq)
 
             // 3) Vẽ quân cờ
-            PiecesLayer(board = board, square = sq)
+            PiecesLayer(
+                board = board, 
+                square = sq,
+                animatingPiece = animatingPiece,
+                animationProgress = animationProgress.value
+            )
 
             // 4) Lưới click 8x8
             ClickGrid(
@@ -99,14 +131,25 @@ fun ChessBoardBitboard(
                     } else {
                         val sel = selected!!
                         val isMove = isSet(movesMask, idx)
-                        if (isMove) {
-                            // Thực hiện đi quân
-                            board = applyMove(board, sel, idx)
-                            // Đổi lượt
-                            turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
-                            selected = null
-                            movesMask = 0UL
+                    if (isMove) {
+                        // Lấy thông tin quân cờ trước khi di chuyển
+                        val movingPiece = pieceAt(board, sel)
+                        if (movingPiece != null) {
+                            val sideChar = if (movingPiece.first == Side.WHITE) "w" else "b"
+                            val pieceChar = movingPiece.second.lowercase()
+                            val pieceCode = "$sideChar$pieceChar"
+                            // Bắt đầu animation
+                            animatingPiece = Triple(pieceCode, sel, idx)
+                            // Set pending move để xử lý sau khi animation hoàn thành
+                            pendingMove = Pair(sel, idx)
                         } else {
+                            // Fallback nếu không tìm thấy quân cờ
+                            board = applyMove(board, sel, idx)
+                            turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
+                        }
+                        selected = null
+                        movesMask = 0UL
+                    } else {
                             // Chạm sang quân khác cùng màu -> đổi selection
                             if (here?.first == turn) {
                                 selected = idx
@@ -147,15 +190,25 @@ private fun BoardBackground(square: Dp) {
 }
 
 @Composable
-private fun PiecesLayer(board: Bitboards, square: Dp) {
+private fun PiecesLayer(
+    board: Bitboards, 
+    square: Dp, 
+    animatingPiece: Triple<String, Int, Int>?, 
+    animationProgress: Float
+) {
     @Composable
     fun emit(bb: ULong, code: String) {
         val squares = squaresFrom(bb)
         for (idx in squares) {
+            // Không hiển thị quân cờ đang di chuyển ở vị trí cũ
+            if (animatingPiece != null && idx == animatingPiece.second && animatingPiece.first == code) {
+                continue
+            }
             val (r, c) = rowColFromIndex(idx)
             Piece(code, r, c, square)
         }
     }
+    
     Box(Modifier.fillMaxSize()) {
         // White
         emit(board.WK, "wk"); emit(board.WQ, "wq"); emit(board.WR, "wr")
@@ -163,6 +216,23 @@ private fun PiecesLayer(board: Bitboards, square: Dp) {
         // Black
         emit(board.BK, "bk"); emit(board.BQ, "bq"); emit(board.BR, "br")
         emit(board.BB, "bb"); emit(board.BN, "bn"); emit(board.BP, "bp")
+        
+        // Render quân cờ đang di chuyển với animation
+        animatingPiece?.let { (pieceCode, fromIdx, toIdx) ->
+            val (fromR, fromC) = rowColFromIndex(fromIdx)
+            val (toR, toC) = rowColFromIndex(toIdx)
+            
+            // Tính toán vị trí interpolated
+            val currentR = fromR + (toR - fromR) * animationProgress
+            val currentC = fromC + (toC - fromC) * animationProgress
+            
+            AnimatedPiece(
+                code = pieceCode,
+                row = currentR,
+                col = currentC,
+                square = square
+            )
+        }
     }
 }
 
@@ -225,4 +295,23 @@ private fun ClickGrid(
             }
         }
     }
+}
+
+@Composable
+private fun AnimatedPiece(
+    code: String,
+    row: Float,
+    col: Float,
+    square: Dp
+) {
+    Piece(
+        code = code,
+        row = row.toInt(), // Piece hiện tại chỉ nhận Int, nhưng offset sẽ được điều chỉnh
+        col = col.toInt(),
+        square = square,
+        modifier = Modifier.offset(
+            x = square * (col - col.toInt()), // Offset fractional part
+            y = square * (row - row.toInt())
+        )
+    )
 }
