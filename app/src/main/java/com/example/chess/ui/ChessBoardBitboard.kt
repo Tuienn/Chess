@@ -6,10 +6,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -129,35 +133,40 @@ private fun ChessBoardBitboardImpl(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0B0B0F))
-            .padding(16.dp)
     ) {
-        // Back button
-        Button(
+        // Back arrow button - top left corner
+        IconButton(
             onClick = onBack,
             modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(bottom = 16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF2ECC71),
-                contentColor = Color.White
-            )
+                .align(Alignment.TopStart)
+                .padding(16.dp)
         ) {
-            Text(
-                text = "Back to Menu",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
             )
         }
+        
+        // Main content column
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
 
         // Bàn cờ
+        Spacer(modifier = Modifier.weight(1f))
         BoxWithConstraints(
             modifier = Modifier
+                .fillMaxWidth()
                 .aspectRatio(1f)
+                .align(Alignment.CenterHorizontally)
                 .background(Color(0xFFEEEED2))
         ) {
             val size = minOf(maxWidth, maxHeight)
@@ -242,6 +251,7 @@ private fun ChessBoardBitboardImpl(
             // 6) Highlight selected origin (after grid to not block clicks)
             selected?.let { HighlightOrigin(index = it, square = sq) }
         }
+        Spacer(modifier = Modifier.weight(1f))
         
         // 7) Promotion Sheet
         if (showPromotionSheet) {
@@ -264,6 +274,7 @@ private fun ChessBoardBitboardImpl(
             gameState = gameState,
             onReturnToMenu = onBack
         )
+        }
     }
 }
 
