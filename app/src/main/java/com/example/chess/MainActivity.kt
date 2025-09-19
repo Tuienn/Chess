@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.example.chess.model.initialBitboards
+import com.example.chess.model.Side
 import com.example.chess.ui.ChessBoardBitboard
 import com.example.chess.ui.MenuScreen
 import com.example.chess.ui.WatchGameScreen
@@ -25,7 +26,7 @@ import com.example.chess.ui.ColorSelectionModal
 
 sealed class Screen {
     data object Menu : Screen()
-    data object Game : Screen()
+    data class Game(val playerColor: Side? = null, val isOnlineMode: Boolean = false) : Screen()
     data object Watch : Screen()
 }
 
@@ -53,7 +54,7 @@ class MainActivity : ComponentActivity() {
                             val animationDuration = 400
                             val slideDirection = when (targetState) {
                                 Screen.Menu -> -1 // Slide in from left when going back to menu
-                                Screen.Game, Screen.Watch -> 1 // Slide in from right when going forward
+                                is Screen.Game, Screen.Watch -> 1 // Slide in from right when going forward
                             }
                             
                             slideInHorizontally(
@@ -68,13 +69,15 @@ class MainActivity : ComponentActivity() {
                     ) { currentScreen ->
                         when (currentScreen) {
                             Screen.Menu -> MenuScreen(
-                                onGetStarted = { screen = Screen.Game },
+                                onGetStarted = { screen = Screen.Game() }, // Offline mode
                                 onWatchGame = { screen = Screen.Watch },
                                 onPlayOnline = { modalState = ModalState.OnlinePlay }
                             )
-                            Screen.Game -> ChessBoardBitboard(
+                            is Screen.Game -> ChessBoardBitboard(
                                 initial = initialBitboards(),
                                 onBack = { screen = Screen.Menu },
+                                playerColor = currentScreen.playerColor,
+                                isOnlineMode = currentScreen.isOnlineMode,
                                 modifier = Modifier.fillMaxSize()
                             )
                             Screen.Watch -> WatchGameScreen(
@@ -96,20 +99,27 @@ class MainActivity : ComponentActivity() {
                                 modalState = ModalState.CreateRoom(selectedColor)
                             }
                         )
-                        is ModalState.CreateRoom -> CreateRoomModal(
-                            selectedColor = (modalState as ModalState.CreateRoom).selectedColor,
-                            onDismiss = { 
-                                modalState = ModalState.None
-                                // TODO: Start the game with selected color (modalState.selectedColor)
-                                screen = Screen.Game
-                            }
-                        )
+                        is ModalState.CreateRoom -> {
+                            val currentModalState = modalState as ModalState.CreateRoom
+                            CreateRoomModal(
+                                selectedColor = currentModalState.selectedColor,
+                                onDismiss = { 
+                                    // Save selected color before changing modalState
+                                    val selectedColor = currentModalState.selectedColor
+                                    modalState = ModalState.None
+                                    // Start online game with selected color
+                                    val playerSide = if (selectedColor == "white") Side.WHITE else Side.BLACK
+                                    screen = Screen.Game(playerColor = playerSide, isOnlineMode = true)
+                                }
+                            )
+                        }
                         ModalState.JoinRoom -> JoinRoomModal(
                             onDismiss = { modalState = ModalState.None },
                             onJoinRoom = { roomCode ->
                                 // TODO: Implement room joining logic
                                 modalState = ModalState.None
-                                screen = Screen.Game
+                                // Assume joining player gets the opposite color (black by default for now)
+                                screen = Screen.Game(playerColor = Side.BLACK, isOnlineMode = true)
                             }
                         )
                         ModalState.None -> {}

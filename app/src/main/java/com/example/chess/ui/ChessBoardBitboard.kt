@@ -51,12 +51,14 @@ private fun needsPromotionForMove(state: GameState, move: Move): Boolean {
 fun ChessBoardBitboard(
     initial: Bitboards,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    playerColor: Side? = null, // null = both sides can move (offline), WHITE/BLACK = only that side can move (online)
+    isOnlineMode: Boolean = false // để xác định có xoay bàn cờ không
 ) {
     var gameState by remember { 
         mutableStateOf(GameState(boards = initial, sideToMove = Side.WHITE)) 
     }
-    ChessBoardBitboardImpl(gameState, onBack, modifier) { gameState = it }
+    ChessBoardBitboardImpl(gameState, onBack, modifier, playerColor, isOnlineMode) { gameState = it }
 }
 
 /**
@@ -67,10 +69,12 @@ fun ChessBoardBitboard(
 fun ChessBoardBitboard(
     initialState: GameState,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    playerColor: Side? = null,
+    isOnlineMode: Boolean = false
 ) {
     var gameState by remember { mutableStateOf(initialState) }
-    ChessBoardBitboardImpl(gameState, onBack, modifier) { gameState = it }
+    ChessBoardBitboardImpl(gameState, onBack, modifier, playerColor, isOnlineMode) { gameState = it }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,10 +83,30 @@ private fun ChessBoardBitboardImpl(
     gameState: GameState,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    playerColor: Side? = null,
+    isOnlineMode: Boolean = false,
     onGameStateChange: (GameState) -> Unit
 ) {
     var selected by remember { mutableStateOf<Int?>(null) }
     var availableMoves by remember { mutableStateOf<List<Move>>(emptyList()) }
+    
+    // Xác định có nên xoay bàn cờ không (chỉ xoay khi chơi online và là quân đen)
+    val shouldRotateBoard = isOnlineMode && playerColor == Side.BLACK
+    
+    // Helper functions để xử lý xoay bàn cờ
+    fun rotateRowCol(r: Int, c: Int): Pair<Int, Int> {
+        return if (shouldRotateBoard) {
+            Pair(7 - r, 7 - c)
+        } else {
+            Pair(r, c)
+        }
+    }
+    
+    fun rotateIndex(idx: Int): Int {
+        val (r, c) = rowColFromIndex(idx)
+        val (newR, newC) = rotateRowCol(r, c)
+        return indexFromRowCol(newR, newC)
+    }
     
     // Animation state cho quân cờ đang di chuyển
     var animatingPiece by remember { mutableStateOf<Triple<String, Int, Int>?>(null) } // (pieceCode, fromIdx, toIdx)
@@ -176,17 +200,18 @@ private fun ChessBoardBitboardImpl(
             BoardBackground(square = sq)
 
             // 2) Overlay move highlights
-            MovesOverlay(moves = availableMoves, square = sq)
+            MovesOverlay(moves = availableMoves, square = sq, shouldRotateBoard = shouldRotateBoard)
 
             // 3) Check indicator (highlight king when in check)
-            CheckIndicator(gameState = gameState, square = sq)
+            CheckIndicator(gameState = gameState, square = sq, shouldRotateBoard = shouldRotateBoard)
 
             // 4) Draw pieces
             PiecesLayer(
                 board = gameState.boards, 
                 square = sq,
                 animatingPiece = animatingPiece,
-                animationProgress = animationProgress.value
+                animationProgress = animationProgress.value,
+                shouldRotateBoard = shouldRotateBoard
             )
 
             // 5) 8x8 click grid
@@ -199,16 +224,26 @@ private fun ChessBoardBitboardImpl(
                         return@ClickGrid
                     }
                     
-                    val idx = indexFromRowCol(r, c)
+                    // Chuyển đổi tọa độ click về tọa độ thật của bàn cờ
+                    val (realR, realC) = rotateRowCol(r, c)
+                    val idx = indexFromRowCol(realR, realC)
                     val here = pieceAt(gameState.boards, idx)
 
                     if (selected == null) {
                         // No selection -> only allow selecting current side's piece
-                        if (here?.first == gameState.sideToMove) {
+                        val canSelectPiece = if (playerColor != null) {
+                            // Online mode: chỉ cho phép chọn quân của màu được chỉ định
+                            here?.first == playerColor && here.first == gameState.sideToMove
+                        } else {
+                            // Offline mode: cho phép chọn quân của lượt hiện tại
+                            here?.first == gameState.sideToMove
+                        }
+                        
+                        if (canSelectPiece) {
                             selected = idx
                             availableMoves = generateMoves(gameState, idx)
                         } else {
-                            // tapping empty or opponent piece -> ignore
+                            // tapping empty, opponent piece, or not player's turn -> ignore
                             selected = null
                             availableMoves = emptyList()
                         }
@@ -236,7 +271,15 @@ private fun ChessBoardBitboardImpl(
                             availableMoves = emptyList()
                         } else {
                             // Tap another friendly piece -> change selection
-                            if (here?.first == gameState.sideToMove) {
+                            val canSelectPiece = if (playerColor != null) {
+                                // Online mode: chỉ cho phép chọn quân của màu được chỉ định
+                                here?.first == playerColor && here.first == gameState.sideToMove
+                            } else {
+                                // Offline mode: cho phép chọn quân của lượt hiện tại
+                                here?.first == gameState.sideToMove
+                            }
+                            
+                            if (canSelectPiece) {
                                 selected = idx
                                 availableMoves = generateMoves(gameState, idx)
                             } else {
@@ -249,7 +292,7 @@ private fun ChessBoardBitboardImpl(
             )
 
             // 6) Highlight selected origin (after grid to not block clicks)
-            selected?.let { HighlightOrigin(index = it, square = sq) }
+            selected?.let { HighlightOrigin(index = it, square = sq, shouldRotateBoard = shouldRotateBoard) }
         }
         Spacer(modifier = Modifier.weight(1f))
         
@@ -303,7 +346,8 @@ private fun PiecesLayer(
     board: Bitboards, 
     square: Dp, 
     animatingPiece: Triple<String, Int, Int>?, 
-    animationProgress: Float
+    animationProgress: Float,
+    shouldRotateBoard: Boolean = false
 ) {
     @Composable
     fun emit(bb: ULong, code: String) {
@@ -314,7 +358,13 @@ private fun PiecesLayer(
                 continue
             }
             val (r, c) = rowColFromIndex(idx)
-            Piece(code, r, c, square)
+            // Xoay tọa độ nếu cần
+            val (displayR, displayC) = if (shouldRotateBoard) {
+                Pair(7 - r, 7 - c)
+            } else {
+                Pair(r, c)
+            }
+            Piece(code, displayR, displayC, square)
         }
     }
     
@@ -331,9 +381,21 @@ private fun PiecesLayer(
             val (fromR, fromC) = rowColFromIndex(fromIdx)
             val (toR, toC) = rowColFromIndex(toIdx)
             
+            // Xoay tọa độ nếu cần
+            val (displayFromR, displayFromC) = if (shouldRotateBoard) {
+                Pair(7 - fromR, 7 - fromC)
+            } else {
+                Pair(fromR, fromC)
+            }
+            val (displayToR, displayToC) = if (shouldRotateBoard) {
+                Pair(7 - toR, 7 - toC)
+            } else {
+                Pair(toR, toC)
+            }
+            
             // Tính toán vị trí interpolated
-            val currentR = fromR + (toR - fromR) * animationProgress
-            val currentC = fromC + (toC - fromC) * animationProgress
+            val currentR = displayFromR + (displayToR - displayFromR) * animationProgress
+            val currentC = displayFromC + (displayToC - displayFromC) * animationProgress
             
             AnimatedPiece(
                 code = pieceCode,
@@ -346,7 +408,7 @@ private fun PiecesLayer(
 }
 
 @Composable
-private fun MovesOverlay(moves: List<Move>, square: Dp) {
+private fun MovesOverlay(moves: List<Move>, square: Dp, shouldRotateBoard: Boolean = false) {
     if (moves.isEmpty()) return
     val captureColor = Color(0xAAE74C3C) // red-ish
     val moveColor = Color(0xAA2ECC71)    // green-ish
@@ -357,7 +419,13 @@ private fun MovesOverlay(moves: List<Move>, square: Dp) {
         val sqPx = square.toPx()
         for (move in moves) {
             val (r, c) = rowColFromIndex(move.to)
-            val center = Offset(c * sqPx + sqPx / 2f, r * sqPx + sqPx / 2f)
+            // Xoay tọa độ nếu cần
+            val (displayR, displayC) = if (shouldRotateBoard) {
+                Pair(7 - r, 7 - c)
+            } else {
+                Pair(r, c)
+            }
+            val center = Offset(displayC * sqPx + sqPx / 2f, displayR * sqPx + sqPx / 2f)
             val radius = sqPx * 0.18f
             
             // Chọn màu dựa trên loại nước đi
@@ -374,7 +442,7 @@ private fun MovesOverlay(moves: List<Move>, square: Dp) {
 
 /** Highlight vua khi bị chiếu */
 @Composable
-private fun CheckIndicator(gameState: GameState, square: Dp) {
+private fun CheckIndicator(gameState: GameState, square: Dp, shouldRotateBoard: Boolean = false) {
     if (isKingInCheck(gameState, gameState.sideToMove)) {
         val kingBB = if (gameState.sideToMove == Side.WHITE) gameState.boards.WK else gameState.boards.BK
         val kingSq = squaresFrom(kingBB).firstOrNull()
@@ -383,10 +451,16 @@ private fun CheckIndicator(gameState: GameState, square: Dp) {
             Canvas(Modifier.fillMaxSize()) {
                 val sqPx = square.toPx()
                 val (r, c) = rowColFromIndex(kingSq)
+                // Xoay tọa độ nếu cần
+                val (displayR, displayC) = if (shouldRotateBoard) {
+                    Pair(7 - r, 7 - c)
+                } else {
+                    Pair(r, c)
+                }
                 val pad = sqPx * 0.05f
                 drawRect(
                     color = checkColor,
-                    topLeft = Offset(c * sqPx + pad, r * sqPx + pad),
+                    topLeft = Offset(displayC * sqPx + pad, displayR * sqPx + pad),
                     size = androidx.compose.ui.geometry.Size(sqPx - 2 * pad, sqPx - 2 * pad)
                 )
             }
@@ -397,15 +471,21 @@ private fun CheckIndicator(gameState: GameState, square: Dp) {
 
 /** Highlight ô nguồn */
 @Composable
-private fun HighlightOrigin(index: Int, square: Dp) {
+private fun HighlightOrigin(index: Int, square: Dp, shouldRotateBoard: Boolean = false) {
     val col = Color(0x88498AF3)
     Canvas(Modifier.fillMaxSize()) {
         val sqPx = square.toPx()
         val (r, c) = rowColFromIndex(index)
+        // Xoay tọa độ nếu cần
+        val (displayR, displayC) = if (shouldRotateBoard) {
+            Pair(7 - r, 7 - c)
+        } else {
+            Pair(r, c)
+        }
         val pad = sqPx * 0.05f
         drawRect(
             color = col,
-            topLeft = Offset(c * sqPx + pad, r * sqPx + pad),
+            topLeft = Offset(displayC * sqPx + pad, displayR * sqPx + pad),
             size = androidx.compose.ui.geometry.Size(sqPx - 2 * pad, sqPx - 2 * pad)
         )
     }

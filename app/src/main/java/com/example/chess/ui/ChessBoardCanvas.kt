@@ -13,7 +13,9 @@ import com.example.chess.model.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChessBoardCanvas(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    playerColor: Side? = null, // null = both sides can move (offline), WHITE/BLACK = only that side can move (online)
+    isOnlineMode: Boolean = false // để xác định có xoay bàn cờ không
 ) {
             // 1) Valid chess game state (provided in your model package)
     var gameState by remember { mutableStateOf(GameState(boards = initialBitboards(), sideToMove = Side.WHITE)) }
