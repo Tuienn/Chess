@@ -30,11 +30,14 @@ fun MenuScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0B0B0F)) // nền tối
-            .padding(24.dp)
+            .padding(24.dp),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+            
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
+
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(

@@ -2,8 +2,12 @@ package com.example.chess.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,12 +32,29 @@ fun WatchGameScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0B0B0F))
-            .padding(20.dp)
     ) {
         val context = LocalContext.current
 
+        // Back arrow button - top left corner
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        // Main content
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -60,19 +81,8 @@ fun WatchGameScreen(
                 contentScale = ContentScale.FillWidth
             )
 
-            // Nút Back
-            Button(
-                onClick = onBack,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF2ECC71),
-                    contentColor = Color.Black
-                )
-            ) {
-                Text(text = "Back", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
+            // Spacer to replace the removed back button
+            Spacer(modifier = Modifier.height(52.dp))
         }
     }
 }
