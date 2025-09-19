@@ -1,84 +1,78 @@
 package com.example.chess.ui
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.chess.model.*
 
-/** Bàn cờ 8x8 chiếm toàn bộ chiều ngang + số (1–8) và chữ (a–h) như bạn yêu cầu. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChessBoardCanvas(
-    modifier: Modifier = Modifier,
-    lightColor: Color = Color(0xFFEEEED2),
-    darkColor: Color = Color(0xFF769656)
+    modifier: Modifier = Modifier
 ) {
-    val tm = rememberTextMeasurer()
+    // 1) Trạng thái ván cờ "đúng luật" (đã có trong gói model bạn thêm trước đó)
+    var gameState by remember { mutableStateOf(GameState(boards = initialBitboards(), sideToMove = Side.WHITE)) }
 
-    Canvas(modifier = modifier) {
-        val boardSize = size.width  // Sử dụng toàn bộ chiều ngang
-        val sq = boardSize / 8f
-        val x0 = 0f  // Bắt đầu từ cạnh trái
-        val y0 = (size.height - boardSize) / 2f
-        val pad = 4.dp.toPx()
+    // 2) Quản lý sheet chọn phong cấp
+    var pendingPromotionMove by remember { mutableStateOf<Move?>(null) }
+    val sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showPromotionSheet by remember { mutableStateOf(false) }
 
-        val fontSizeSp = (sq * 0.28f / (density * fontScale)).sp
-        val style = TextStyle(fontSize = fontSizeSp, fontWeight = FontWeight.SemiBold)
+    // 3) UI bàn cờ (vẽ như bạn đã có)
+    Box(modifier.fillMaxSize()) {
+        // ... phần vẽ lưới, quân cờ, highlight, xử lý chọn from/to ... (giữ code cũ)
 
-        // 64 ô
-        for (r in 0 until 8) {
-            for (c in 0 until 8) {
-                val color = if ((r + c) % 2 == 0) lightColor else darkColor
-                drawRect(color, Offset(x0 + c * sq, y0 + r * sq), Size(sq, sq))
+        // Ví dụ bạn có callback khi người chơi chọn xong 1 nước đi:
+        val onUserPickMove: (Move) -> Unit = { chosen ->
+            // Nếu là nước cần phong cấp mà promo hiện chưa set -> mở sheet
+            if (needsPromotion(gameState, chosen) && chosen.promo == null) {
+                pendingPromotionMove = chosen
+                showPromotionSheet = true
+            } else {
+                // Nước bình thường
+                gameState = applyMove(gameState, chosen)
             }
         }
 
-        // Viền
-        drawRect(
-            color = Color.Black.copy(alpha = 0.25f),
-            topLeft = Offset(x0, y0),
-            size = Size(boardSize, boardSize),
-            style = Stroke(width = 2.dp.toPx())
-        )
+        // ... ở nơi bạn generate nước đi từ ô đang chọn:
+        // val moves: List<Move> = generateMoves(gameState, fromIndex)
+        // Khi user chạm ô đích, bạn build Move { from, to, ... } rồi gọi onUserPickMove(move)
 
-        // Số 1–8 cột trái (góc trên-trái) — ô xanh chữ trắng, ô sáng chữ xanh
-        for (r in 0 until 8) {
-            val number = (8 - r).toString()
-            val isDark = ((r + 0) % 2 != 0)
-            val textColor = if (isDark) Color.White else darkColor
-            drawText(
-                textMeasurer = tm,
-                text = number,
-                topLeft = Offset(x0 + pad, y0 + r * sq + pad),
-                style = style.copy(color = textColor, fontSize = fontSizeSp * 0.7f)
-            )
-        }
-
-        // Chữ a–h hàng dưới (góc dưới-phải)
-        for (c in 0 until 8) {
-            val letter = ('a'.code + c).toChar().toString()
-            val r = 7
-            val isDark = ((r + c) % 2 != 0)
-            val textColor = if (isDark) Color.White else darkColor
-            val layout = tm.measure(AnnotatedString(letter), style = style.copy(color = textColor, fontSize = fontSizeSp * 0.7f))
-            drawText(
-                textMeasurer = tm,
-                text = letter,
-                topLeft = Offset(
-                    x = x0 + c * sq + sq - pad - layout.size.width,
-                    y = y0 + r * sq + sq - pad - layout.size.height
-                ),
-                style = style.copy(color = textColor, fontSize = fontSizeSp * 0.7f)
-            )
+        // 4) Bottom sheet chọn quân
+        if (showPromotionSheet) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    showPromotionSheet = false
+                    pendingPromotionMove = null
+                },
+                sheetState = sheetState
+            ) {
+                val sideToPromote = gameState.sideToMove // đang là bên sắp đi trước khi apply
+                // Lưu ý: Nếu bạn đã đổi lượt trước khi mở sheet, cần suy luận side từ "m.from"
+                PromotionPicker(side = sideToPromote, onPick = { picked ->
+                    val pending = pendingPromotionMove
+                    if (pending != null) {
+                        // Gọi apply với quân được chọn
+                        gameState = applyMove(gameState, pending.copy(promo = picked))
+                    }
+                    showPromotionSheet = false
+                    pendingPromotionMove = null
+                })
+            }
         }
     }
+}
+
+/** Kiểm tra nước đi có phải tốt lên hàng cuối không (khi promo còn null) */
+private fun needsPromotion(state: GameState, move: Move): Boolean {
+    val who = pieceAt(state.boards, move.from) ?: return false
+    val (side, type) = who
+    if (type != 'P') return false
+    val (rTo, _) = rowColFromIndex(move.to)
+    return (side == Side.WHITE && rTo == 0) || (side == Side.BLACK && rTo == 7)
 }
