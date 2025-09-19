@@ -39,7 +39,10 @@ fun MenuScreen(
             verticalArrangement = Arrangement.SpaceBetween
 
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(top = 100.dp)
+            ) {
                 Text(
                     text = "115,512 Playing Now",
                     color = Color.White,
@@ -90,7 +93,7 @@ fun MenuScreen(
                     )
                 ) {
                     Text(
-                        text = "Get Started",
+                        text = "Play offline",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
@@ -108,7 +111,7 @@ fun MenuScreen(
                     )
                 ) {
                     Text(
-                        text = "Watch a game",
+                        text = "Live preview",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
