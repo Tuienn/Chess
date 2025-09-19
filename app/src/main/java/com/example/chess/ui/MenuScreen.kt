@@ -24,6 +24,7 @@ import com.example.chess.R
 fun MenuScreen(
     onGetStarted: () -> Unit,
     onWatchGame: () -> Unit,
+    onPlayOnline: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -94,6 +95,25 @@ fun MenuScreen(
                 ) {
                     Text(
                         text = "Play offline",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Button(
+                    onClick = onPlayOnline,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3498DB),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        text = "Play online",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,

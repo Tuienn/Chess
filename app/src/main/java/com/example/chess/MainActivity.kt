@@ -18,11 +18,23 @@ import com.example.chess.model.initialBitboards
 import com.example.chess.ui.ChessBoardBitboard
 import com.example.chess.ui.MenuScreen
 import com.example.chess.ui.WatchGameScreen
+import com.example.chess.ui.OnlinePlayModal
+import com.example.chess.ui.CreateRoomModal
+import com.example.chess.ui.JoinRoomModal
+import com.example.chess.ui.ColorSelectionModal
 
 sealed class Screen {
     data object Menu : Screen()
     data object Game : Screen()
     data object Watch : Screen()
+}
+
+sealed class ModalState {
+    data object None : ModalState()
+    data object OnlinePlay : ModalState()
+    data object ColorSelection : ModalState()
+    data class CreateRoom(val selectedColor: String) : ModalState()
+    data object JoinRoom : ModalState()
 }
 
 class MainActivity : ComponentActivity() {
@@ -32,6 +44,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize()) {
                     var screen by remember { mutableStateOf<Screen>(Screen.Menu) }
+                    var modalState by remember { mutableStateOf<ModalState>(ModalState.None) }
 
                     AnimatedContent(
                         targetState = screen,
@@ -56,7 +69,8 @@ class MainActivity : ComponentActivity() {
                         when (currentScreen) {
                             Screen.Menu -> MenuScreen(
                                 onGetStarted = { screen = Screen.Game },
-                                onWatchGame = { screen = Screen.Watch }
+                                onWatchGame = { screen = Screen.Watch },
+                                onPlayOnline = { modalState = ModalState.OnlinePlay }
                             )
                             Screen.Game -> ChessBoardBitboard(
                                 initial = initialBitboards(),
@@ -67,6 +81,38 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = Screen.Menu }
                             )
                         }
+                    }
+
+                    // Handle modals
+                    when (modalState) {
+                        ModalState.OnlinePlay -> OnlinePlayModal(
+                            onDismiss = { modalState = ModalState.None },
+                            onCreateRoom = { modalState = ModalState.ColorSelection },
+                            onJoinRoom = { modalState = ModalState.JoinRoom }
+                        )
+                        ModalState.ColorSelection -> ColorSelectionModal(
+                            onDismiss = { modalState = ModalState.None },
+                            onColorSelected = { selectedColor ->
+                                modalState = ModalState.CreateRoom(selectedColor)
+                            }
+                        )
+                        is ModalState.CreateRoom -> CreateRoomModal(
+                            selectedColor = (modalState as ModalState.CreateRoom).selectedColor,
+                            onDismiss = { 
+                                modalState = ModalState.None
+                                // TODO: Start the game with selected color (modalState.selectedColor)
+                                screen = Screen.Game
+                            }
+                        )
+                        ModalState.JoinRoom -> JoinRoomModal(
+                            onDismiss = { modalState = ModalState.None },
+                            onJoinRoom = { roomCode ->
+                                // TODO: Implement room joining logic
+                                modalState = ModalState.None
+                                screen = Screen.Game
+                            }
+                        )
+                        ModalState.None -> {}
                     }
                 }
             }
