@@ -46,3 +46,40 @@ fun attackMask(b: Bitboards, bySide: Side): ULong {
 
     return mask
 }
+
+/** Kiểm tra xem vua của một bên có đang bị chiếu không */
+fun isKingInCheck(state: GameState, side: Side): Boolean {
+    val b = state.boards
+    val kingBB = if (side == Side.WHITE) b.WK else b.BK
+    val kingSq = squaresFrom(kingBB).firstOrNull() ?: return false
+    val oppSide = if (side == Side.WHITE) Side.BLACK else Side.WHITE
+    val attackMask = attackMask(b, oppSide)
+    return isSet(attackMask, kingSq)
+}
+
+/** Kiểm tra xem một nước đi có để vua của mình bị chiếu không (self-check) */
+fun wouldLeaveKingInCheck(state: GameState, move: Move): Boolean {
+    val newState = applyMove(state, move)
+    return isKingInCheck(newState, state.sideToMove)
+}
+
+/** Trạng thái game */
+enum class GameStatus {
+    PLAYING,    // Game đang diễn ra
+    CHECK,      // Vua bị chiếu nhưng có nước đi
+    CHECKMATE,  // Chiếu bí (thua)
+    STALEMATE   // Hòa cờ (không có nước đi hợp lệ nhưng vua không bị chiếu)
+}
+
+/** Kiểm tra trạng thái hiện tại của game */
+fun getGameStatus(state: GameState): GameStatus {
+    val inCheck = isKingInCheck(state, state.sideToMove)
+    val legalMoves = generateAllLegalMoves(state)
+    
+    return when {
+        legalMoves.isEmpty() && inCheck -> GameStatus.CHECKMATE
+        legalMoves.isEmpty() && !inCheck -> GameStatus.STALEMATE
+        inCheck -> GameStatus.CHECK
+        else -> GameStatus.PLAYING
+    }
+}

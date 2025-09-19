@@ -112,7 +112,7 @@ fun generateMoves(state: GameState, fromIndex: Int): List<Move> {
     val own = if (side == Side.WHITE) occ.white else occ.black
     val oppAll = occ.all
 
-    return when (type) {
+    val pseudoLegalMoves = when (type) {
         'K' -> {
             val km = kingMoves(fromIndex, own)
             val normal = squaresFrom(km).map { Move(fromIndex, it) }
@@ -125,6 +125,28 @@ fun generateMoves(state: GameState, fromIndex: Int): List<Move> {
         'P' -> pawnMovesWithSpecial(fromIndex, side, state)
         else -> emptyList()
     }
+
+    // Lọc chỉ những nước đi không khiến vua bị chiếu (legal moves)
+    return pseudoLegalMoves.filter { move ->
+        !wouldLeaveKingInCheck(state, move)
+    }
+}
+
+/** Sinh tất cả nước đi hợp lệ cho bên hiện tại */
+fun generateAllLegalMoves(state: GameState): List<Move> {
+    val b = state.boards
+    val side = state.sideToMove
+    val allPieces = if (side == Side.WHITE) {
+        occupancy(b).white
+    } else {
+        occupancy(b).black
+    }
+    
+    val allMoves = ArrayList<Move>()
+    for (sq in squaresFrom(allPieces)) {
+        allMoves.addAll(generateMoves(state, sq))
+    }
+    return allMoves
 }
 
 /* -------------------------- Áp dụng 1 nước đi Move -------------------------- */

@@ -152,6 +152,9 @@ private fun ChessBoardBitboardImpl(
             )
         }
 
+        // Game Status Display
+        GameStatusDisplay(gameState = gameState)
+
         // Bàn cờ
         BoxWithConstraints(
             modifier = Modifier
@@ -167,7 +170,10 @@ private fun ChessBoardBitboardImpl(
             // 2) Overlay highlight nước đi
             MovesOverlay(moves = availableMoves, square = sq)
 
-            // 3) Vẽ quân cờ
+            // 3) Check indicator (highlight vua nếu bị chiếu)
+            CheckIndicator(gameState = gameState, square = sq)
+
+            // 4) Vẽ quân cờ
             PiecesLayer(
                 board = gameState.boards, 
                 square = sq,
@@ -175,10 +181,16 @@ private fun ChessBoardBitboardImpl(
                 animationProgress = animationProgress.value
             )
 
-            // 4) Lưới click 8x8
+            // 5) Lưới click 8x8
             ClickGrid(
                 square = sq,
                 onSquareClick = { r, c ->
+                    // Kiểm tra trạng thái game - không cho di chuyển nếu game kết thúc
+                    val status = getGameStatus(gameState)
+                    if (status == GameStatus.CHECKMATE || status == GameStatus.STALEMATE) {
+                        return@ClickGrid
+                    }
+                    
                     val idx = indexFromRowCol(r, c)
                     val here = pieceAt(gameState.boards, idx)
 
@@ -228,11 +240,11 @@ private fun ChessBoardBitboardImpl(
                 }
             )
 
-            // 5) Highlight ô đang chọn (sau grid để không chặn click)
+            // 6) Highlight ô đang chọn (sau grid để không chặn click)
             selected?.let { HighlightOrigin(index = it, square = sq) }
         }
         
-        // 6) Promotion Sheet
+        // 7) Promotion Sheet
         if (showPromotionSheet) {
             ModalBottomSheet(
                 onDismissRequest = {
@@ -342,6 +354,61 @@ private fun MovesOverlay(moves: List<Move>, square: Dp) {
             drawCircle(color = color, radius = radius, center = center)
         }
     }
+}
+
+/** Highlight vua khi bị chiếu */
+@Composable
+private fun CheckIndicator(gameState: GameState, square: Dp) {
+    if (isKingInCheck(gameState, gameState.sideToMove)) {
+        val kingBB = if (gameState.sideToMove == Side.WHITE) gameState.boards.WK else gameState.boards.BK
+        val kingSq = squaresFrom(kingBB).firstOrNull()
+        if (kingSq != null) {
+            val checkColor = Color(0xAAE74C3C) // Đỏ cho check
+            Canvas(Modifier.fillMaxSize()) {
+                val sqPx = square.toPx()
+                val (r, c) = rowColFromIndex(kingSq)
+                val pad = sqPx * 0.05f
+                drawRect(
+                    color = checkColor,
+                    topLeft = Offset(c * sqPx + pad, r * sqPx + pad),
+                    size = androidx.compose.ui.geometry.Size(sqPx - 2 * pad, sqPx - 2 * pad)
+                )
+            }
+        }
+    }
+}
+
+/** Hiển thị trạng thái game */
+@Composable
+private fun GameStatusDisplay(gameState: GameState) {
+    val status = getGameStatus(gameState)
+    val statusText = when (status) {
+        GameStatus.CHECK -> "CHIẾU VUA!"
+        GameStatus.CHECKMATE -> "CHIẾU BÍ - ${if (gameState.sideToMove == Side.WHITE) "ĐEN" else "TRẮNG"} THẮNG!"
+        GameStatus.STALEMATE -> "HÒA CỜ - STALEMATE"
+        GameStatus.PLAYING -> {
+            val turn = if (gameState.sideToMove == Side.WHITE) "TRẮNG" else "ĐEN"
+            "Lượt của: $turn"
+        }
+    }
+    
+    val statusColor = when (status) {
+        GameStatus.CHECK -> Color(0xFFE74C3C) // Đỏ
+        GameStatus.CHECKMATE -> Color(0xFFE74C3C) // Đỏ
+        GameStatus.STALEMATE -> Color(0xFFF39C12) // Cam
+        GameStatus.PLAYING -> Color.White
+    }
+    
+    Text(
+        text = statusText,
+        color = statusColor,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    )
 }
 
 /** Highlight ô nguồn */
