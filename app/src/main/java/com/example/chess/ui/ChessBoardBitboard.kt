@@ -24,11 +24,11 @@ import androidx.compose.ui.unit.sp
 import com.example.chess.model.*
 
 /** Kiểm tra nước đi có phải tốt lên hàng cuối không */
-private fun needsPromotion(board: Bitboards, fromIndex: Int, toIndex: Int): Boolean {
-    val who = pieceAt(board, fromIndex) ?: return false
+private fun needsPromotionForMove(state: GameState, move: Move): Boolean {
+    val who = pieceAt(state.boards, move.from) ?: return false
     val (side, type) = who
     if (type != 'P') return false
-    val (rTo, _) = rowColFromIndex(toIndex)
+    val (rTo, _) = rowColFromIndex(move.to)
     return (side == Side.WHITE && rTo == 0) || (side == Side.BLACK && rTo == 7)
 }
 
@@ -47,17 +47,43 @@ fun ChessBoardBitboard(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var board by remember { mutableStateOf(initial) }
-    var turn by remember { mutableStateOf(Side.WHITE) }
+    var gameState by remember { 
+        mutableStateOf(GameState(boards = initial, sideToMove = Side.WHITE)) 
+    }
+    ChessBoardBitboardImpl(gameState, onBack, modifier) { gameState = it }
+}
+
+/**
+ * Overload để nhận GameState trực tiếp (cho testing)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChessBoardBitboard(
+    initialState: GameState,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var gameState by remember { mutableStateOf(initialState) }
+    ChessBoardBitboardImpl(gameState, onBack, modifier) { gameState = it }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChessBoardBitboardImpl(
+    gameState: GameState,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    onGameStateChange: (GameState) -> Unit
+) {
     var selected by remember { mutableStateOf<Int?>(null) }
-    var movesMask by remember { mutableStateOf(0UL) }
+    var availableMoves by remember { mutableStateOf<List<Move>>(emptyList()) }
     
     // Animation state cho quân cờ đang di chuyển
     var animatingPiece by remember { mutableStateOf<Triple<String, Int, Int>?>(null) } // (pieceCode, fromIdx, toIdx)
-    var pendingMove by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (fromIdx, toIdx) - move chờ thực hiện
+    var pendingMove by remember { mutableStateOf<Move?>(null) } // Move chờ thực hiện
     
     // Promotion state
-    var pendingPromotionMove by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (fromIdx, toIdx) - move cần phong cấp
+    var pendingPromotionMove by remember { mutableStateOf<Move?>(null) } // Move cần phong cấp
     var showPromotionSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
@@ -73,19 +99,17 @@ fun ChessBoardBitboard(
     
     // Handle pending move after animation
     LaunchedEffect(pendingMove) {
-        pendingMove?.let { (fromIdx, toIdx) ->
+        pendingMove?.let { move ->
             kotlinx.coroutines.delay(300) // Đợi animation hoàn thành
             
             // Kiểm tra nếu cần phong cấp
-            if (needsPromotion(board, fromIdx, toIdx)) {
-                pendingPromotionMove = Pair(fromIdx, toIdx)
+            if (needsPromotionForMove(gameState, move)) {
+                pendingPromotionMove = move
                 showPromotionSheet = true
                 pendingMove = null
             } else {
-                // Thực hiện đi quân bình thường
-                board = applyMove(board, fromIdx, toIdx)
-                // Đổi lượt
-                turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
+                // Thực hiện đi quân với GameState
+                onGameStateChange(applyMove(gameState, move))
                 pendingMove = null
             }
         }
@@ -93,11 +117,10 @@ fun ChessBoardBitboard(
     
     // Function to apply promotion move
     val applyPromotionMove: (Char) -> Unit = { promotionPiece ->
-        pendingPromotionMove?.let { (fromIdx, toIdx) ->
-            // Apply move with promotion using the overloaded function
-            board = applyMove(board, fromIdx, toIdx, promotionPiece)
-            // Đổi lượt
-            turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
+        pendingPromotionMove?.let { move ->
+            // Apply move with promotion
+            val promotionMove = move.copy(promo = promotionPiece)
+            onGameStateChange(applyMove(gameState, promotionMove))
             // Clear promotion state
             pendingPromotionMove = null
             showPromotionSheet = false
@@ -142,11 +165,11 @@ fun ChessBoardBitboard(
             BoardBackground(square = sq)
 
             // 2) Overlay highlight nước đi
-            MovesOverlay(movesMask = movesMask, square = sq)
+            MovesOverlay(moves = availableMoves, square = sq)
 
             // 3) Vẽ quân cờ
             PiecesLayer(
-                board = board, 
+                board = gameState.boards, 
                 square = sq,
                 animatingPiece = animatingPiece,
                 animationProgress = animationProgress.value
@@ -157,47 +180,48 @@ fun ChessBoardBitboard(
                 square = sq,
                 onSquareClick = { r, c ->
                     val idx = indexFromRowCol(r, c)
-                    val here = pieceAt(board, idx)
+                    val here = pieceAt(gameState.boards, idx)
 
                     if (selected == null) {
                         // Chưa chọn -> chỉ cho phép chọn quân của lượt hiện tại
-                        if (here?.first == turn) {
+                        if (here?.first == gameState.sideToMove) {
                             selected = idx
-                            movesMask = movesForSquare(board, idx)
+                            availableMoves = generateMoves(gameState, idx)
                         } else {
                             // chạm ô trống hoặc quân đối phương -> bỏ qua
                             selected = null
-                            movesMask = 0UL
+                            availableMoves = emptyList()
                         }
                     } else {
                         val sel = selected!!
-                        val isMove = isSet(movesMask, idx)
-                    if (isMove) {
-                        // Lấy thông tin quân cờ trước khi di chuyển
-                        val movingPiece = pieceAt(board, sel)
-                        if (movingPiece != null) {
-                            val sideChar = if (movingPiece.first == Side.WHITE) "w" else "b"
-                            val pieceChar = movingPiece.second.lowercase()
-                            val pieceCode = "$sideChar$pieceChar"
-                            // Bắt đầu animation
-                            animatingPiece = Triple(pieceCode, sel, idx)
-                            // Set pending move để xử lý sau khi animation hoàn thành
-                            pendingMove = Pair(sel, idx)
+                        // Tìm move tương ứng
+                        val targetMove = availableMoves.find { it.from == sel && it.to == idx }
+                        
+                        if (targetMove != null) {
+                            // Lấy thông tin quân cờ trước khi di chuyển
+                            val movingPiece = pieceAt(gameState.boards, sel)
+                            if (movingPiece != null) {
+                                val sideChar = if (movingPiece.first == Side.WHITE) "w" else "b"
+                                val pieceChar = movingPiece.second.lowercase()
+                                val pieceCode = "$sideChar$pieceChar"
+                                // Bắt đầu animation
+                                animatingPiece = Triple(pieceCode, sel, idx)
+                                // Set pending move để xử lý sau khi animation hoàn thành
+                                pendingMove = targetMove
+                            } else {
+                                // Fallback nếu không tìm thấy quân cờ
+                                onGameStateChange(applyMove(gameState, targetMove))
+                            }
+                            selected = null
+                            availableMoves = emptyList()
                         } else {
-                            // Fallback nếu không tìm thấy quân cờ
-                            board = applyMove(board, sel, idx)
-                            turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
-                        }
-                        selected = null
-                        movesMask = 0UL
-                    } else {
                             // Chạm sang quân khác cùng màu -> đổi selection
-                            if (here?.first == turn) {
+                            if (here?.first == gameState.sideToMove) {
                                 selected = idx
-                                movesMask = movesForSquare(board, idx)
+                                availableMoves = generateMoves(gameState, idx)
                             } else {
                                 selected = null
-                                movesMask = 0UL
+                                availableMoves = emptyList()
                             }
                         }
                     }
@@ -218,7 +242,7 @@ fun ChessBoardBitboard(
                 sheetState = sheetState
             ) {
                 PromotionPicker(
-                    side = turn, // Sử dụng lượt hiện tại
+                    side = gameState.sideToMove, // Sử dụng lượt hiện tại từ GameState
                     onPick = applyPromotionMove
                 )
             }
@@ -294,24 +318,28 @@ private fun PiecesLayer(
 }
 
 @Composable
-private fun MovesOverlay(movesMask: ULong, square: Dp) {
-    if (movesMask == 0UL) return
+private fun MovesOverlay(moves: List<Move>, square: Dp) {
+    if (moves.isEmpty()) return
     val captureColor = Color(0xAAE74C3C) // red-ish
     val moveColor = Color(0xAA2ECC71)    // green-ish
+    val castleColor = Color(0xAA3498DB)  // blue-ish for castling
+    val enPassantColor = Color(0xAAF39C12) // orange-ish for en passant
+    
     Canvas(Modifier.fillMaxSize()) {
         val sqPx = square.toPx()
-        for (i in 0 until 64) {
-            if (isSet(movesMask, i)) {
-                val (r, c) = rowColFromIndex(i)
-                val center = Offset(c * sqPx + sqPx / 2f, r * sqPx + sqPx / 2f)
-                val radius = sqPx * 0.18f
-                // Nếu ô có đối thủ -> tô viền đỏ,
-                // còn lại ô trống -> chấm tròn xanh
-                // Để biết ô có đối thủ, ta sẽ kiểm tra trong grid click (đã có) hoặc
-                // đặt đơn giản ở đây: màu xanh cho tất cả, viền đỏ nếu cần bằng 2 pass.
-                // Ở đây chỉ vẽ chấm xanh, capture sẽ đổi thành vòng tròn đỏ mỏng.
-                drawCircle(color = moveColor, radius = radius, center = center)
+        for (move in moves) {
+            val (r, c) = rowColFromIndex(move.to)
+            val center = Offset(c * sqPx + sqPx / 2f, r * sqPx + sqPx / 2f)
+            val radius = sqPx * 0.18f
+            
+            // Chọn màu dựa trên loại nước đi
+            val color = when {
+                move.isCastle -> castleColor
+                move.isEnPassant -> enPassantColor
+                else -> moveColor // Bao gồm cả capture thông thường
             }
+            
+            drawCircle(color = color, radius = radius, center = center)
         }
     }
 }
