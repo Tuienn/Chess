@@ -8,7 +8,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,12 +23,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.chess.model.*
 
+/** Kiểm tra nước đi có phải tốt lên hàng cuối không */
+private fun needsPromotion(board: Bitboards, fromIndex: Int, toIndex: Int): Boolean {
+    val who = pieceAt(board, fromIndex) ?: return false
+    val (side, type) = who
+    if (type != 'P') return false
+    val (rTo, _) = rowColFromIndex(toIndex)
+    return (side == Side.WHITE && rTo == 0) || (side == Side.BLACK && rTo == 7)
+}
+
+
 /**
  * Bàn cờ tương tác:
  * - Nhấn 1 ô có quân thuộc lượt hiện tại -> highlight nước đi từ movesForSquare
  * - Nhấn vào một ô đích được highlight -> thực hiện đi quân (có ăn quân), đổi lượt
  * - Trắng đi trước
+ * - Hỗ trợ phong cấp tốt với PromotionPicker
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChessBoardBitboard(
     initial: Bitboards,
@@ -41,6 +56,11 @@ fun ChessBoardBitboard(
     var animatingPiece by remember { mutableStateOf<Triple<String, Int, Int>?>(null) } // (pieceCode, fromIdx, toIdx)
     var pendingMove by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (fromIdx, toIdx) - move chờ thực hiện
     
+    // Promotion state
+    var pendingPromotionMove by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (fromIdx, toIdx) - move cần phong cấp
+    var showPromotionSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    
     val animationProgress = animateFloatAsState(
         targetValue = if (animatingPiece != null) 1f else 0f,
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
@@ -55,11 +75,32 @@ fun ChessBoardBitboard(
     LaunchedEffect(pendingMove) {
         pendingMove?.let { (fromIdx, toIdx) ->
             kotlinx.coroutines.delay(300) // Đợi animation hoàn thành
-            // Thực hiện đi quân
-            board = applyMove(board, fromIdx, toIdx)
+            
+            // Kiểm tra nếu cần phong cấp
+            if (needsPromotion(board, fromIdx, toIdx)) {
+                pendingPromotionMove = Pair(fromIdx, toIdx)
+                showPromotionSheet = true
+                pendingMove = null
+            } else {
+                // Thực hiện đi quân bình thường
+                board = applyMove(board, fromIdx, toIdx)
+                // Đổi lượt
+                turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
+                pendingMove = null
+            }
+        }
+    }
+    
+    // Function to apply promotion move
+    val applyPromotionMove: (Char) -> Unit = { promotionPiece ->
+        pendingPromotionMove?.let { (fromIdx, toIdx) ->
+            // Apply move with promotion using the overloaded function
+            board = applyMove(board, fromIdx, toIdx, promotionPiece)
             // Đổi lượt
             turn = if (turn == Side.WHITE) Side.BLACK else Side.WHITE
-            pendingMove = null
+            // Clear promotion state
+            pendingPromotionMove = null
+            showPromotionSheet = false
         }
     }
 
@@ -165,6 +206,22 @@ fun ChessBoardBitboard(
 
             // 5) Highlight ô đang chọn (sau grid để không chặn click)
             selected?.let { HighlightOrigin(index = it, square = sq) }
+        }
+        
+        // 6) Promotion Sheet
+        if (showPromotionSheet) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    showPromotionSheet = false
+                    pendingPromotionMove = null
+                },
+                sheetState = sheetState
+            ) {
+                PromotionPicker(
+                    side = turn, // Sử dụng lượt hiện tại
+                    onPick = applyPromotionMove
+                )
+            }
         }
     }
 }

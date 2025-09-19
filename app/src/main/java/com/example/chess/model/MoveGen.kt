@@ -226,3 +226,71 @@ fun applyMove(board: Bitboards, from: Int, to: Int): Bitboards {
     }
     return nb
 }
+
+/**
+ * Áp dụng nước đi với khả năng chỉ định quân phong cấp.
+ * — Dùng cho ChessBoardBitboard khi cần phong cấp thủ công.
+ */
+fun applyMove(board: Bitboards, from: Int, to: Int, promotionPiece: Char? = null): Bitboards {
+    val who = pieceAt(board, from) ?: return board
+    val (side, type) = who
+
+    // Clear quân bị ăn ở ô đích
+    var nb = board.copy(
+        WP = clearAt(board.WP, to), WN = clearAt(board.WN, to), WB = clearAt(board.WB, to),
+        WR = clearAt(board.WR, to), WQ = clearAt(board.WQ, to), WK = clearAt(board.WK, to),
+        BP = clearAt(board.BP, to), BN = clearAt(board.BN, to), BB = clearAt(board.BB, to),
+        BR = clearAt(board.BR, to), BQ = clearAt(board.BQ, to), BK = clearAt(board.BK, to)
+    )
+
+    fun mv(bb: ULong): ULong = setAt(clearAt(bb, from), to)
+    nb = when (side) {
+        Side.WHITE -> when (type) {
+            'P' -> {
+                val (r, _) = rowColFromIndex(to)
+                if (r == 0) {
+                    // Phong cấp - sử dụng promotionPiece nếu có, không thì mặc định Queen
+                    val piece = promotionPiece?.uppercaseChar() ?: 'Q'
+                    nb = nb.copy(WP = clearAt(nb.WP, from))
+                    when (piece) {
+                        'Q' -> nb.copy(WQ = setAt(nb.WQ, to))
+                        'R' -> nb.copy(WR = setAt(nb.WR, to))
+                        'B' -> nb.copy(WB = setAt(nb.WB, to))
+                        'N' -> nb.copy(WN = setAt(nb.WN, to))
+                        else -> nb.copy(WQ = setAt(nb.WQ, to))
+                    }
+                } else nb.copy(WP = mv(nb.WP))
+            }
+            'N' -> nb.copy(WN = mv(nb.WN))
+            'B' -> nb.copy(WB = mv(nb.WB))
+            'R' -> nb.copy(WR = mv(nb.WR))
+            'Q' -> nb.copy(WQ = mv(nb.WQ))
+            'K' -> nb.copy(WK = mv(nb.WK))
+            else -> nb
+        }
+        Side.BLACK -> when (type) {
+            'P' -> {
+                val (r, _) = rowColFromIndex(to)
+                if (r == 7) {
+                    // Phong cấp - sử dụng promotionPiece nếu có, không thì mặc định Queen
+                    val piece = promotionPiece?.uppercaseChar() ?: 'Q'
+                    nb = nb.copy(BP = clearAt(nb.BP, from))
+                    when (piece) {
+                        'Q' -> nb.copy(BQ = setAt(nb.BQ, to))
+                        'R' -> nb.copy(BR = setAt(nb.BR, to))
+                        'B' -> nb.copy(BB = setAt(nb.BB, to))
+                        'N' -> nb.copy(BN = setAt(nb.BN, to))
+                        else -> nb.copy(BQ = setAt(nb.BQ, to))
+                    }
+                } else nb.copy(BP = mv(nb.BP))
+            }
+            'N' -> nb.copy(BN = mv(nb.BN))
+            'B' -> nb.copy(BB = mv(nb.BB))
+            'R' -> nb.copy(BR = mv(nb.BR))
+            'Q' -> nb.copy(BQ = mv(nb.BQ))
+            'K' -> nb.copy(BK = mv(nb.BK))
+            else -> nb
+        }
+    }
+    return nb
+}
