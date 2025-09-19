@@ -36,7 +36,7 @@ fun pieceAt(b: Bitboards, index: Int): Pair<Side, Char>? {
 
 private fun onBoard(r: Int, c: Int) = r in 0..7 && c in 0..7
 
-private fun kingMoves(from: Int, own: ULong): ULong {
+fun kingMoves(from: Int, own: ULong): ULong {
     val (r0, c0) = rowColFromIndex(from)
     var moves = 0UL
     for (dr in -1..1) for (dc in -1..1) {
@@ -49,7 +49,7 @@ private fun kingMoves(from: Int, own: ULong): ULong {
     return moves
 }
 
-private fun knightMoves(from: Int, own: ULong): ULong {
+fun knightMoves(from: Int, own: ULong): ULong {
     val (r0, c0) = rowColFromIndex(from)
     var moves = 0UL
     val deltas = arrayOf(
@@ -82,13 +82,13 @@ private fun slide(from: Int, own: ULong, opp: ULong, dirs: Array<Pair<Int, Int>>
     return res
 }
 
-private fun rookMoves(from: Int, own: ULong, opp: ULong): ULong =
+fun rookMoves(from: Int, own: ULong, opp: ULong): ULong =
     slide(from, own, opp, arrayOf(0 to +1, 0 to -1, +1 to 0, -1 to 0))
 
-private fun bishopMoves(from: Int, own: ULong, opp: ULong): ULong =
+fun bishopMoves(from: Int, own: ULong, opp: ULong): ULong =
     slide(from, own, opp, arrayOf(+1 to +1, +1 to -1, -1 to +1, -1 to -1))
 
-private fun queenMoves(from: Int, own: ULong, opp: ULong): ULong =
+fun queenMoves(from: Int, own: ULong, opp: ULong): ULong =
     rookMoves(from, own, opp) or bishopMoves(from, own, opp)
 
 /** Pawn: đi thẳng 1 ô; ăn chéo 1 ô. Không 2 ô, không en passant, không phong cấp. */
@@ -125,69 +125,104 @@ private fun pawnMoves(from: Int, side: Side, occ: Occupancy): ULong {
 }
 
 /** API chính: bitboard ô đích (pseudo-legal) cho ô fromIndex. */
-fun movesForSquare(b: Bitboards, fromIndex: Int): ULong {
-    val occ = occupancy(b)
-    val p = pieceAt(b, fromIndex) ?: return 0UL
-    val (side, type) = p
+fun movesForSquare(board: Bitboards, fromIndex: Int): ULong {
+    val who = pieceAt(board, fromIndex) ?: return 0UL
+    val (side, type) = who
+    val occ = occupancy(board)
     val own = if (side == Side.WHITE) occ.white else occ.black
-    val opp = if (side == Side.WHITE) occ.black else occ.white
+    val all = occ.all
+
     return when (type) {
         'K' -> kingMoves(fromIndex, own)
-        'Q' -> queenMoves(fromIndex, own, opp)
-        'R' -> rookMoves(fromIndex, own, opp)
-        'B' -> bishopMoves(fromIndex, own, opp)
+        'Q' -> queenMoves(fromIndex, own, all)
+        'R' -> rookMoves(fromIndex, own, all)
+        'B' -> bishopMoves(fromIndex, own, all)
         'N' -> knightMoves(fromIndex, own)
-        'P' -> pawnMoves(fromIndex, side, occ)
+        'P' -> {
+            // TỐT: thêm logic **đi 2 ô lần đầu** vào mask cơ bản
+            val (r0, c0) = rowColFromIndex(fromIndex)
+            val dir = if (side == Side.WHITE) -1 else +1
+            var mask = 0UL
+
+            // 1 ô thẳng nếu trống
+            val r1 = r0 + dir
+            if (r1 in 0..7) {
+                val i1 = indexFromRowCol(r1, c0)
+                if (!isSet(all, i1)) {
+                    mask = mask or bitAt(i1)
+                    // 2 ô ở hàng xuất phát (nếu cả 2 ô trống)
+                    val startRank = if (side == Side.WHITE) 6 else 1
+                    if (r0 == startRank) {
+                        val r2 = r0 + 2 * dir
+                        val i2 = indexFromRowCol(r2, c0)
+                        if (!isSet(all, i2)) mask = mask or bitAt(i2)
+                    }
+                }
+            }
+            // Ăn chéo (cơ bản, không EP)
+            for (dc in intArrayOf(-1, +1)) {
+                val rr = r0 + dir
+                val cc = c0 + dc
+                if (rr in 0..7 && cc in 0..7) {
+                    val i = indexFromRowCol(rr, cc)
+                    val targetHasOpp = if (side == Side.WHITE) isSet(occ.black, i) else isSet(occ.white, i)
+                    if (targetHasOpp) mask = mask or bitAt(i)
+                }
+            }
+            mask
+        }
         else -> 0UL
     }
 }
 
-/* ---------------------------- Move application ---------------------------- */
-/** Áp dụng nước đi from->to (bắt quân nếu có). Không xử lý đặc biệt. */
-fun applyMove(b: Bitboards, fromIndex: Int, toIndex: Int): Bitboards {
-    val who = pieceAt(b, fromIndex) ?: return b
+/**
+ * Áp dụng 1 nước đi cơ bản (không EP/castling/promotion lựa chọn).
+ * — Dùng cho demo ChessBoardBitboard hiện tại.
+ * — Nếu muốn “đúng luật”, hãy dùng applyMove(GameState, Move) trong MoveEngine.kt.
+ */
+fun applyMove(board: Bitboards, from: Int, to: Int): Bitboards {
+    val who = pieceAt(board, from) ?: return board
     val (side, type) = who
 
-    // Xóa quân bị bắt (nếu có) ở ô đích trước
-    fun removeAt(bb: ULong): ULong = clearAt(bb, toIndex)
-    val rWP = removeAt(b.WP); val rWN = removeAt(b.WN); val rWB = removeAt(b.WB)
-    val rWR = removeAt(b.WR); val rWQ = removeAt(b.WQ); val rWK = removeAt(b.WK)
-    val rBP = removeAt(b.BP); val rBN = removeAt(b.BN); val rBB = removeAt(b.BB)
-    val rBR = removeAt(b.BR); val rBQ = removeAt(b.BQ); val rBK = removeAt(b.BK)
+    // Clear quân bị ăn ở ô đích
+    var nb = board.copy(
+        WP = clearAt(board.WP, to), WN = clearAt(board.WN, to), WB = clearAt(board.WB, to),
+        WR = clearAt(board.WR, to), WQ = clearAt(board.WQ, to), WK = clearAt(board.WK, to),
+        BP = clearAt(board.BP, to), BN = clearAt(board.BN, to), BB = clearAt(board.BB, to),
+        BR = clearAt(board.BR, to), BQ = clearAt(board.BQ, to), BK = clearAt(board.BK, to)
+    )
 
-    // Di chuyển quân
-    fun move(bb: ULong): ULong = setAt(clearAt(bb, fromIndex), toIndex)
-
-    return when (side) {
+    fun mv(bb: ULong): ULong = setAt(clearAt(bb, from), to)
+    nb = when (side) {
         Side.WHITE -> when (type) {
-            'P' -> b.copy(WP = move(rWP), WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'N' -> b.copy(WP = rWP, WN = move(rWN), WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'B' -> b.copy(WP = rWP, WN = rWN, WB = move(rWB), WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'R' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = move(rWR), WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'Q' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = move(rWQ), WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'K' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = move(rWK),
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            else -> b
+            'P' -> {
+                // Auto-queen nếu tới hàng 8 (để tránh kẹt UI)
+                val (r, _) = rowColFromIndex(to)
+                if (r == 0) {
+                    nb.copy(WP = clearAt(nb.WP, from), WQ = setAt(nb.WQ, to))
+                } else nb.copy(WP = mv(nb.WP))
+            }
+            'N' -> nb.copy(WN = mv(nb.WN))
+            'B' -> nb.copy(WB = mv(nb.WB))
+            'R' -> nb.copy(WR = mv(nb.WR))
+            'Q' -> nb.copy(WQ = mv(nb.WQ))
+            'K' -> nb.copy(WK = mv(nb.WK))
+            else -> nb
         }
         Side.BLACK -> when (type) {
-            'P' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = move(rBP), BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'N' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = move(rBN), BB = rBB, BR = rBR, BQ = rBQ, BK = rBK)
-            'B' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = move(rBB), BR = rBR, BQ = rBQ, BK = rBK)
-            'R' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = move(rBR), BQ = rBQ, BK = rBK)
-            'Q' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = move(rBQ), BK = rBK)
-            'K' -> b.copy(WP = rWP, WN = rWN, WB = rWB, WR = rWR, WQ = rWQ, WK = rWK,
-                BP = rBP, BN = rBN, BB = rBB, BR = rBR, BQ = rBQ, BK = move(rBK))
-            else -> b
+            'P' -> {
+                val (r, _) = rowColFromIndex(to)
+                if (r == 7) {
+                    nb.copy(BP = clearAt(nb.BP, from), BQ = setAt(nb.BQ, to))
+                } else nb.copy(BP = mv(nb.BP))
+            }
+            'N' -> nb.copy(BN = mv(nb.BN))
+            'B' -> nb.copy(BB = mv(nb.BB))
+            'R' -> nb.copy(BR = mv(nb.BR))
+            'Q' -> nb.copy(BQ = mv(nb.BQ))
+            'K' -> nb.copy(BK = mv(nb.BK))
+            else -> nb
         }
     }
+    return nb
 }
