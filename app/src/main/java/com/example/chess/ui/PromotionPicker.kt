@@ -26,7 +26,7 @@ import com.example.chess.model.Side
  * }
  * ------------------------------------------------------------------------- */
 
-/** Map (side, pieceChar) -> code "wq","wr","wb","wn" hoặc "bq","br","bb","bn" */
+/** Map (side, pieceChar) -> code "wq","wr","wb","wn" or "bq","br","bb","bn" */
 private fun promotionCode(side: Side, ch: Char): String {
     val color = if (side == Side.WHITE) 'w' else 'b'
     val kind = when (ch.uppercaseChar()) {
@@ -40,9 +40,9 @@ private fun promotionCode(side: Side, ch: Char): String {
 }
 
 /**
- * UI chọn quân phong cấp: Q / R / B / N
- * - side: để hiện đúng màu (trắng/đen)
- * - onPick: trả về 'Q','R','B','N'
+ * Promotion picker UI: Q / R / B / N
+ * - side: to show correct color (white/black)
+ * - onPick: returns 'Q','R','B','N'
  */
 @Composable
 fun PromotionPicker(
@@ -55,7 +55,7 @@ fun PromotionPicker(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            "Chọn quân phong cấp",
+            "Choose promotion",
             style = MaterialTheme.typography.titleMedium
         )
         Spacer(Modifier.height(12.dp))
@@ -81,10 +81,10 @@ fun PromotionPicker(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         when (ch) {
-                            'Q' -> "Hậu"
-                            'R' -> "Xe"
-                            'B' -> "Tượng"
-                            else -> "Mã"
+                            'Q' -> "Queen"
+                            'R' -> "Rook"
+                            'B' -> "Bishop"
+                            else -> "Knight"
                         },
                         style = MaterialTheme.typography.bodySmall
                     )

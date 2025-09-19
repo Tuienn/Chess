@@ -6,11 +6,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -133,7 +135,7 @@ private fun ChessBoardBitboardImpl(
             .background(Color(0xFF0B0B0F))
             .padding(16.dp)
     ) {
-        // Nút Back ở trên
+        // Back button
         Button(
             onClick = onBack,
             modifier = Modifier
@@ -152,9 +154,6 @@ private fun ChessBoardBitboardImpl(
             )
         }
 
-        // Game Status Display
-        GameStatusDisplay(gameState = gameState)
-
         // Bàn cờ
         BoxWithConstraints(
             modifier = Modifier
@@ -164,16 +163,16 @@ private fun ChessBoardBitboardImpl(
             val size = minOf(maxWidth, maxHeight)
             val sq: Dp = size / 8
 
-            // 1) Vẽ nền bàn cờ 8x8
+            // 1) Draw 8x8 board background
             BoardBackground(square = sq)
 
-            // 2) Overlay highlight nước đi
+            // 2) Overlay move highlights
             MovesOverlay(moves = availableMoves, square = sq)
 
-            // 3) Check indicator (highlight vua nếu bị chiếu)
+            // 3) Check indicator (highlight king when in check)
             CheckIndicator(gameState = gameState, square = sq)
 
-            // 4) Vẽ quân cờ
+            // 4) Draw pieces
             PiecesLayer(
                 board = gameState.boards, 
                 square = sq,
@@ -181,11 +180,11 @@ private fun ChessBoardBitboardImpl(
                 animationProgress = animationProgress.value
             )
 
-            // 5) Lưới click 8x8
+            // 5) 8x8 click grid
             ClickGrid(
                 square = sq,
                 onSquareClick = { r, c ->
-                    // Kiểm tra trạng thái game - không cho di chuyển nếu game kết thúc
+                    // Check game status - block moves if game has ended
                     val status = getGameStatus(gameState)
                     if (status == GameStatus.CHECKMATE || status == GameStatus.STALEMATE) {
                         return@ClickGrid
@@ -195,39 +194,39 @@ private fun ChessBoardBitboardImpl(
                     val here = pieceAt(gameState.boards, idx)
 
                     if (selected == null) {
-                        // Chưa chọn -> chỉ cho phép chọn quân của lượt hiện tại
+                        // No selection -> only allow selecting current side's piece
                         if (here?.first == gameState.sideToMove) {
                             selected = idx
                             availableMoves = generateMoves(gameState, idx)
                         } else {
-                            // chạm ô trống hoặc quân đối phương -> bỏ qua
+                            // tapping empty or opponent piece -> ignore
                             selected = null
                             availableMoves = emptyList()
                         }
                     } else {
                         val sel = selected!!
-                        // Tìm move tương ứng
+                        // Find corresponding move
                         val targetMove = availableMoves.find { it.from == sel && it.to == idx }
                         
                         if (targetMove != null) {
-                            // Lấy thông tin quân cờ trước khi di chuyển
+                            // Capture piece info before moving
                             val movingPiece = pieceAt(gameState.boards, sel)
                             if (movingPiece != null) {
                                 val sideChar = if (movingPiece.first == Side.WHITE) "w" else "b"
                                 val pieceChar = movingPiece.second.lowercase()
                                 val pieceCode = "$sideChar$pieceChar"
-                                // Bắt đầu animation
+                                // Start animation
                                 animatingPiece = Triple(pieceCode, sel, idx)
-                                // Set pending move để xử lý sau khi animation hoàn thành
+                                // Set pending move to apply after animation completes
                                 pendingMove = targetMove
                             } else {
-                                // Fallback nếu không tìm thấy quân cờ
+                                // Fallback if piece not found
                                 onGameStateChange(applyMove(gameState, targetMove))
                             }
                             selected = null
                             availableMoves = emptyList()
                         } else {
-                            // Chạm sang quân khác cùng màu -> đổi selection
+                            // Tap another friendly piece -> change selection
                             if (here?.first == gameState.sideToMove) {
                                 selected = idx
                                 availableMoves = generateMoves(gameState, idx)
@@ -240,7 +239,7 @@ private fun ChessBoardBitboardImpl(
                 }
             )
 
-            // 6) Highlight ô đang chọn (sau grid để không chặn click)
+            // 6) Highlight selected origin (after grid to not block clicks)
             selected?.let { HighlightOrigin(index = it, square = sq) }
         }
         
@@ -254,11 +253,17 @@ private fun ChessBoardBitboardImpl(
                 sheetState = sheetState
             ) {
                 PromotionPicker(
-                    side = gameState.sideToMove, // Sử dụng lượt hiện tại từ GameState
+                    side = gameState.sideToMove,
                     onPick = applyPromotionMove
                 )
             }
         }
+        
+        // 8) Game End Dialog
+        GameEndDialog(
+            gameState = gameState,
+            onReturnToMenu = onBack
+        )
     }
 }
 
@@ -378,38 +383,6 @@ private fun CheckIndicator(gameState: GameState, square: Dp) {
     }
 }
 
-/** Hiển thị trạng thái game */
-@Composable
-private fun GameStatusDisplay(gameState: GameState) {
-    val status = getGameStatus(gameState)
-    val statusText = when (status) {
-        GameStatus.CHECK -> "CHIẾU VUA!"
-        GameStatus.CHECKMATE -> "CHIẾU BÍ - ${if (gameState.sideToMove == Side.WHITE) "ĐEN" else "TRẮNG"} THẮNG!"
-        GameStatus.STALEMATE -> "HÒA CỜ - STALEMATE"
-        GameStatus.PLAYING -> {
-            val turn = if (gameState.sideToMove == Side.WHITE) "TRẮNG" else "ĐEN"
-            "Lượt của: $turn"
-        }
-    }
-    
-    val statusColor = when (status) {
-        GameStatus.CHECK -> Color(0xFFE74C3C) // Đỏ
-        GameStatus.CHECKMATE -> Color(0xFFE74C3C) // Đỏ
-        GameStatus.STALEMATE -> Color(0xFFF39C12) // Cam
-        GameStatus.PLAYING -> Color.White
-    }
-    
-    Text(
-        text = statusText,
-        color = statusColor,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.Bold,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    )
-}
 
 /** Highlight ô nguồn */
 @Composable
@@ -466,4 +439,60 @@ private fun AnimatedPiece(
             y = square * (row - row.toInt())
         )
     )
+}
+
+/** Dialog shows when the game ends */
+@Composable
+private fun GameEndDialog(
+    gameState: GameState,
+    onReturnToMenu: () -> Unit
+) {
+    val status = getGameStatus(gameState)
+    
+    if (status == GameStatus.CHECKMATE || status == GameStatus.STALEMATE) {
+        AlertDialog(
+            onDismissRequest = { /* block outside dismiss */ },
+            title = {
+                Text(
+                    text = if (status == GameStatus.CHECKMATE) "GAME OVER" else "DRAW",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            },
+            text = {
+                val message = when (status) {
+                    GameStatus.CHECKMATE -> {
+                        val winner = if (gameState.sideToMove == Side.WHITE) "BLACK" else "WHITE"
+                        "$winner WINS!"
+                    }
+                    GameStatus.STALEMATE -> "STALEMATE - DRAW"
+                    else -> ""
+                }
+                Text(
+                    text = message,
+                    fontSize = 16.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            },
+            confirmButton = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Button(
+                        onClick = onReturnToMenu,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2ECC71),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Back to Main Menu")
+                    }
+                }
+            },
+            containerColor = Color(0xFF1A1A1F),
+            titleContentColor = Color.White,
+            textContentColor = Color.White
+        )
+    }
 }

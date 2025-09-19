@@ -15,7 +15,7 @@ import com.example.chess.model.*
 fun ChessBoardCanvas(
     modifier: Modifier = Modifier
 ) {
-    // 1) Trạng thái ván cờ "đúng luật" (đã có trong gói model bạn thêm trước đó)
+            // 1) Valid chess game state (provided in your model package)
     var gameState by remember { mutableStateOf(GameState(boards = initialBitboards(), sideToMove = Side.WHITE)) }
 
     // 2) Quản lý sheet chọn phong cấp
