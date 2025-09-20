@@ -34,7 +34,7 @@ sealed class ModalState {
     data object None : ModalState()
     data object OnlinePlay : ModalState()
     data object ColorSelection : ModalState()
-    data class CreateRoom(val selectedColor: String) : ModalState()
+    data class CreateRoom(val selectedColor: String, val roomCode: String) : ModalState()
     data object JoinRoom : ModalState()
 }
 
@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     var screen by remember { mutableStateOf<Screen>(Screen.Menu) }
                     var modalState by remember { mutableStateOf<ModalState>(ModalState.None) }
+                    var currentRoomCode by remember { mutableStateOf<String?>(null) }
 
                     AnimatedContent(
                         targetState = screen,
@@ -91,17 +92,23 @@ class MainActivity : ComponentActivity() {
                         ModalState.OnlinePlay -> OnlinePlayModal(
                             onDismiss = { modalState = ModalState.None },
                             onCreateRoom = { modalState = ModalState.ColorSelection },
-                            onJoinRoom = { modalState = ModalState.JoinRoom }
+                            onJoinRoom = { modalState = ModalState.JoinRoom },
+                            onRoomCreated = { roomCode -> 
+                                currentRoomCode = roomCode
+                            }
                         )
                         ModalState.ColorSelection -> ColorSelectionModal(
                             onDismiss = { modalState = ModalState.None },
                             onColorSelected = { selectedColor ->
-                                modalState = ModalState.CreateRoom(selectedColor)
+                                currentRoomCode?.let { roomCode ->
+                                    modalState = ModalState.CreateRoom(selectedColor, roomCode)
+                                }
                             }
                         )
                         is ModalState.CreateRoom -> {
                             val currentModalState = modalState as ModalState.CreateRoom
                             CreateRoomModal(
+                                roomCode = currentModalState.roomCode,
                                 selectedColor = currentModalState.selectedColor,
                                 onDismiss = { 
                                     // Save selected color before changing modalState

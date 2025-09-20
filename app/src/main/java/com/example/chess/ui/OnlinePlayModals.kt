@@ -14,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -27,14 +26,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.chess.R
-import kotlin.random.Random
+import com.example.chess.network.ChessApiService
+import kotlinx.coroutines.launch
 
 @Composable
 fun OnlinePlayModal(
     onDismiss: () -> Unit,
     onCreateRoom: () -> Unit,
-    onJoinRoom: () -> Unit
+    onJoinRoom: () -> Unit,
+    onRoomCreated: (String) -> Unit = {}
 ) {
+    val coroutineScope = rememberCoroutineScope()
+    val apiService = remember { ChessApiService.create() }
+    var isCreatingRoom by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
@@ -81,7 +86,28 @@ fun OnlinePlayModal(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
-                    onClick = onCreateRoom,
+                    onClick = {
+                        isCreatingRoom = true
+                        errorMessage = null
+                        coroutineScope.launch {
+                            try {
+                                val response = apiService.createRoom()
+                                if (response.isSuccessful) {
+                                    response.body()?.let { roomResponse ->
+                                        onRoomCreated(roomResponse.code)
+                                        onCreateRoom()
+                                    }
+                                } else {
+                                    errorMessage = "Failed to create room: ${response.code()}"
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = "Network error: ${e.message}"
+                            } finally {
+                                isCreatingRoom = false
+                            }
+                        }
+                    },
+                    enabled = !isCreatingRoom,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -90,11 +116,19 @@ fun OnlinePlayModal(
                         contentColor = Color.White
                     )
                 ) {
-                    Text(
-                        text = "Create new room",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isCreatingRoom) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Create new room",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 OutlinedButton(
@@ -112,6 +146,17 @@ fun OnlinePlayModal(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                
+                // Error message display
+                errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        color = Color.Red,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         }
     }
@@ -120,7 +165,7 @@ fun OnlinePlayModal(
 @Composable
 fun CreateRoomModal(
     onDismiss: () -> Unit,
-    roomCode: String = generateRoomCode(),
+    roomCode: String,
     selectedColor: String = "white"
 ) {
     val clipboardManager = LocalClipboardManager.current
